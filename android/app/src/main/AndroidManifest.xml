@@ -5,6 +5,12 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <!-- VIBRATE is a normal permission: no runtime prompt, declared for clarity. -->
     <uses-permission android:name="android.permission.VIBRATE"/>
+    <!-- Foreground service and microphone permissions for Lost Phone Mode -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
     <!-- Camera hardware is required: this app has no purpose without it. -->
     <uses-feature android:name="android.hardware.camera" android:required="true"/>
 
@@ -39,6 +45,12 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Compliant Foreground Service for Lost Phone Mode hotword detection -->
+        <service
+            android:name=".LostPhoneService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
@@ -49,6 +61,14 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- Required on Android 11+ (API 30+) for SpeechRecognizer to discover recognition engines -->
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+        <!-- Required for Text-To-Speech engine discovery -->
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
         </intent>
     </queries>
 </manifest>

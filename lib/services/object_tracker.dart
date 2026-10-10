@@ -37,8 +37,7 @@ class ObjectTracker {
   /// Returns the current smoothed tracked box, or null when nothing is
   /// tracked right now.
   Detection? update(List<Detection> detections, String targetLabel) {
-    final candidates =
-        detections.where((d) => d.label == targetLabel).toList();
+    final candidates = detections.where((d) => d.label == targetLabel).toList();
     if (candidates.isEmpty) {
       _misses++;
       if (_misses >= maxMisses) _tracked = null;

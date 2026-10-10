@@ -97,6 +97,24 @@ void main() {
       expect(g.phrase.toLowerCase(), contains('found'));
     });
 
+    test('says slightly left when target is slightly left', () {
+      final g = engine().guide(_box('bottle', 0.28, 0.3, 0.40, 0.6));
+      expect(g.zone, HorizontalZone.slightlyLeft);
+      expect(g.phrase, 'Move slightly left.');
+    });
+
+    test('says slightly right when target is slightly right', () {
+      final g = engine().guide(_box('bottle', 0.60, 0.3, 0.70, 0.6));
+      expect(g.zone, HorizontalZone.slightlyRight);
+      expect(g.phrase, 'Move slightly right.');
+    });
+
+    test('says move forward when target is centered', () {
+      final g = engine().guide(_box('bottle', 0.45, 0.3, 0.55, 0.6));
+      expect(g.zone, HorizontalZone.center);
+      expect(g.phrase, 'Move forward.');
+    });
+
     test('not found when big but off-center', () {
       final g = engine().guide(_box('bottle', 0.55, 0.25, 0.95, 0.75));
       expect(g.isFound, isFalse);

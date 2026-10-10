@@ -1,14 +1,15 @@
 import 'package:vibration/vibration.dart';
-
 import 'guidance_engine.dart';
+import 'settings_service.dart';
 
-/// Proximity feedback through vibration.
+/// Haptic proximity feedback using Android vibrator APIs.
 ///
-/// The closer the target, the faster the pulse — a blind user can feel
-/// themselves homing in without looking at the screen. A distinct
-/// celebration pattern marks the found state.
-///
-/// All calls are safe no-ops on devices without a vibrator.
+/// Features:
+/// - Distinct vibration intervals: slower when far, rapid when near.
+/// - Double-tap pulse when very close.
+/// - Triumphant triple-pulse cadence upon finding the object.
+/// - Respects user preferences in [SettingsService].
+/// - Fails gracefully if device does not support vibration.
 class HapticService {
   bool _hasVibrator = false;
 
@@ -20,47 +21,72 @@ class HapticService {
     }
   }
 
-  /// One short pulse whose rate encodes proximity. Call at most ~2x/sec;
-  /// the finder screen throttles this.
+  bool get isAvailable => _hasVibrator;
+
+  /// Proximity pulse.
   Future<void> proximityTick(Proximity proximity) async {
-    if (!_hasVibrator) return;
+    if (!_hasVibrator || !SettingsService.instance.hapticFeedback) return;
     try {
       switch (proximity) {
         case Proximity.far:
           await Vibration.vibrate(duration: 40);
           break;
         case Proximity.approaching:
-          await Vibration.vibrate(duration: 60);
+          await Vibration.vibrate(duration: 65);
           break;
         case Proximity.close:
-          await Vibration.vibrate(duration: 80);
+          await Vibration.vibrate(duration: 90);
           break;
         case Proximity.veryClose:
-          // Double-tap: unmistakably close.
-          await Vibration.vibrate(duration: 60);
-          await Future.delayed(const Duration(milliseconds: 90));
-          await Vibration.vibrate(duration: 60);
+          // Rapid double pulse
+          await Vibration.vibrate(duration: 70);
+          await Future.delayed(const Duration(milliseconds: 80));
+          await Vibration.vibrate(duration: 70);
           break;
       }
     } catch (_) {}
   }
 
-  /// Unmistakable "found" pattern: three rising pulses.
+  /// Celebratory triple-pulse sequence when the object is confirmed found.
   Future<void> foundCelebration() async {
-    if (!_hasVibrator) return;
+    if (!_hasVibrator || !SettingsService.instance.hapticFeedback) return;
     try {
-      for (final ms in [80, 80, 160]) {
+      for (final ms in [100, 100, 250]) {
         await Vibration.vibrate(duration: ms);
-        await Future.delayed(const Duration(milliseconds: 120));
+        await Future.delayed(const Duration(milliseconds: 140));
       }
     } catch (_) {}
   }
 
-  /// Gentle tick when the target first appears after being lost.
+  /// Gentle notification when target enters camera field of view.
   Future<void> acquired() async {
-    if (!_hasVibrator) return;
+    if (!_hasVibrator || !SettingsService.instance.hapticFeedback) return;
     try {
       await Vibration.vibrate(duration: 50);
+    } catch (_) {}
+  }
+
+  /// Subtle double-tap when target leaves the frame.
+  Future<void> lost() async {
+    if (!_hasVibrator || !SettingsService.instance.hapticFeedback) return;
+    try {
+      await Vibration.vibrate(duration: 35);
+      await Future.delayed(const Duration(milliseconds: 60));
+      await Vibration.vibrate(duration: 35);
+    } catch (_) {}
+  }
+
+  /// Tactile feedback when cycling language options with hardware volume buttons.
+  Future<void> selectionTick() async {
+    try {
+      await Vibration.vibrate(duration: 45);
+    } catch (_) {}
+  }
+
+  /// Confirm feedback pattern when language selection is confirmed.
+  Future<void> confirmed() async {
+    try {
+      await Vibration.vibrate(pattern: [0, 80, 80, 160]);
     } catch (_) {}
   }
 }

@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'screens/finder_screen.dart';
+import 'screens/home_screen.dart';
+import 'screens/language_selection_screen.dart';
+import 'services/settings_service.dart';
 
-void main() {
+import 'theme/app_theme.dart';
+
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Lock to portrait: detection boxes and guidance assume an upright image.
-  SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  // Lock to portrait: detection coordinates and guidance assume an upright image.
+  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  await SettingsService.instance.initialize();
   runApp(const FindItApp());
 }
 
@@ -15,16 +20,15 @@ class FindItApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isFirstLaunch = SettingsService.instance.isFirstLaunch;
+
     return MaterialApp(
       title: 'FindIt',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData.dark(useMaterial3: true).copyWith(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.amber,
-          brightness: Brightness.dark,
-        ),
-      ),
-      home: const FinderScreen(),
+      theme: AppTheme.darkTheme,
+      home: isFirstLaunch
+          ? const LanguageSelectionScreen(isFirstLaunch: true)
+          : const HomeScreen(),
     );
   }
 }

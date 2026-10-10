@@ -120,10 +120,9 @@ class _PrototypeScreenState extends State<PrototypeScreen> {
     setState(() {
       _latest = frame.detections;
       _inferenceMs = frame.inferenceMs;
-      _status =
-          hits.isEmpty
-              ? 'Scanning for $_targetFriendly… (${frame.detections.length} other objects seen)'
-              : 'TARGET $_targetFriendly: ${(hits.first.confidence * 100).round()}% (${hits.length} found)';
+      _status = hits.isEmpty
+          ? 'Scanning for $_targetFriendly… (${frame.detections.length} other objects seen)'
+          : 'TARGET $_targetFriendly: ${(hits.first.confidence * 100).round()}% (${hits.length} found)';
     });
   }
 
@@ -146,97 +145,90 @@ class _PrototypeScreenState extends State<PrototypeScreen> {
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
       ),
-      body:
-          _failed
-              ? Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Text(
-                    _status,
-                    style: const TextStyle(color: Colors.white, fontSize: 18),
-                    textAlign: TextAlign.center,
+      body: _failed
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  _status,
+                  style: const TextStyle(color: Colors.white, fontSize: 18),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            )
+          : Column(
+              children: [
+                Expanded(
+                  child: camera == null || !camera.value.isInitialized
+                      ? const Center(
+                          child: CircularProgressIndicator(color: Colors.amber),
+                        )
+                      : Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            AspectRatio(
+                              aspectRatio: camera.value.aspectRatio,
+                              child: CameraPreview(camera),
+                            ),
+                            DetectionOverlay(
+                              detections: _latest,
+                              targetModelLabel: _targetModelLabel,
+                            ),
+                          ],
+                        ),
+                ),
+                Container(
+                  color: Colors.black,
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        _status,
+                        style: const TextStyle(
+                          color: Colors.amber,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        'inference ${_inferenceMs}ms · ${_latest.length} detections',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'TARGET OBJECT',
+                        style: TextStyle(
+                          color: Colors.white54,
+                          fontSize: 12,
+                          letterSpacing: 2,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Wrap(
+                        spacing: 8,
+                        children: TargetObjects.supported.keys.map((name) {
+                          final selected = name == _targetFriendly;
+                          return ChoiceChip(
+                            label: Text(
+                              name,
+                              style: const TextStyle(fontSize: 16),
+                            ),
+                            selected: selected,
+                            selectedColor: Colors.amber,
+                            onSelected: (_) =>
+                                setState(() => _targetFriendly = name),
+                          );
+                        }).toList(),
+                      ),
+                    ],
                   ),
                 ),
-              )
-              : Column(
-                children: [
-                  Expanded(
-                    child:
-                        camera == null || !camera.value.isInitialized
-                            ? const Center(
-                              child: CircularProgressIndicator(
-                                color: Colors.amber,
-                              ),
-                            )
-                            : Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                AspectRatio(
-                                  aspectRatio: camera.value.aspectRatio,
-                                  child: CameraPreview(camera),
-                                ),
-                                DetectionOverlay(
-                                  detections: _latest,
-                                  targetModelLabel: _targetModelLabel,
-                                ),
-                              ],
-                            ),
-                  ),
-                  Container(
-                    color: Colors.black,
-                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(
-                          _status,
-                          style: const TextStyle(
-                            color: Colors.amber,
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        Text(
-                          'inference ${_inferenceMs}ms · ${_latest.length} detections',
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 14,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'TARGET OBJECT',
-                          style: TextStyle(
-                            color: Colors.white54,
-                            fontSize: 12,
-                            letterSpacing: 2,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Wrap(
-                          spacing: 8,
-                          children:
-                              TargetObjects.supported.keys.map((name) {
-                                final selected = name == _targetFriendly;
-                                return ChoiceChip(
-                                  label: Text(
-                                    name,
-                                    style: const TextStyle(fontSize: 16),
-                                  ),
-                                  selected: selected,
-                                  selectedColor: Colors.amber,
-                                  onSelected:
-                                      (_) => setState(
-                                        () => _targetFriendly = name,
-                                      ),
-                                );
-                              }).toList(),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+              ],
+            ),
     );
   }
 }

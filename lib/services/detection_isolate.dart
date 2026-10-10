@@ -27,33 +27,57 @@ void detectionIsolateEntry(SendPort mainPort) {
     final msg = message as Map<String, Object?>;
     switch (msg['type'] as String) {
       case 'init':
-        interpreter =
-            Interpreter.fromBuffer(msg['model'] as Uint8List);
-        labels = (msg['labels'] as List).cast<String>();
-        mainPort.send({'type': 'ready'});
+        try {
+          interpreter = Interpreter.fromBuffer(msg['model'] as Uint8List);
+          labels = (msg['labels'] as List).cast<String>();
+          mainPort.send({'type': 'ready'});
+        } catch (e) {
+          mainPort.send({'type': 'error', 'error': e.toString()});
+        }
       case 'frame':
         final it = interpreter;
         final lbs = labels;
-        if (it == null || lbs == null) return;
-        final sw = Stopwatch()..start();
-        final rgb = yuv420ToRgb300(
-          y: msg['y'] as Uint8List,
-          u: msg['u'] as Uint8List,
-          v: msg['v'] as Uint8List,
-          width: msg['width'] as int,
-          height: msg['height'] as int,
-          uvRowStride: msg['uvRowStride'] as int,
-          uvPixelStride: msg['uvPixelStride'] as int,
-          rotation: msg['rotation'] as int,
-        );
-        final dets = _runInference(it, lbs, rgb);
-        sw.stop();
-        mainPort.send({
-          'type': 'result',
-          'id': msg['id'] as int,
-          'ms': sw.elapsedMilliseconds,
-          'dets': dets,
-        });
+        final frameId = msg['id'] as int? ?? 0;
+        if (it == null || lbs == null) {
+          mainPort.send({
+            'type': 'result',
+            'id': frameId,
+            'ms': 0,
+            'dets': <List<Object>>[],
+          });
+          return;
+        }
+        try {
+          final sw = Stopwatch()..start();
+          final rgb = yuv420ToRgb300(
+            y: msg['y'] as Uint8List,
+            u: msg['u'] as Uint8List,
+            v: msg['v'] as Uint8List,
+            width: msg['width'] as int,
+            height: msg['height'] as int,
+            uvRowStride: msg['uvRowStride'] as int,
+            uvPixelStride: msg['uvPixelStride'] as int,
+            rotation: msg['rotation'] as int,
+            yRowStride: msg['yRowStride'] as int?,
+          );
+          final threshold = (msg['threshold'] as num?)?.toDouble() ?? 0.4;
+          final dets = _runInference(it, lbs, rgb, threshold);
+          sw.stop();
+          mainPort.send({
+            'type': 'result',
+            'id': frameId,
+            'ms': sw.elapsedMilliseconds,
+            'dets': dets,
+          });
+        } catch (e) {
+          mainPort.send({
+            'type': 'result',
+            'id': frameId,
+            'ms': 0,
+            'dets': <List<Object>>[],
+            'error': e.toString(),
+          });
+        }
     }
   });
 }
@@ -73,11 +97,13 @@ Uint8List yuv420ToRgb300({
   required int uvRowStride,
   required int uvPixelStride,
   required int rotation,
+  int? yRowStride,
 }) {
   const t = 300;
   final out = Uint8List(t * t * 3);
   final wMinus1 = width - 1;
   final hMinus1 = height - 1;
+  final strideY = (yRowStride != null && yRowStride > 0) ? yRowStride : width;
   int oi = 0;
 
   for (int ty = 0; ty < t; ty++) {
@@ -104,10 +130,11 @@ Uint8List yuv420ToRgb300({
       int sx = fsx.floor().clamp(0, wMinus1);
       int sy = fsy.floor().clamp(0, hMinus1);
 
-      final yVal = y[sy * width + sx];
+      final yIndex = (sy * strideY + sx).clamp(0, y.length - 1);
+      final yVal = y[yIndex];
       final uvIndex = (sy >> 1) * uvRowStride + (sx >> 1) * uvPixelStride;
-      final uVal = u[uvIndex];
-      final vVal = v[uvIndex];
+      final uVal = u[uvIndex.clamp(0, u.length - 1)];
+      final vVal = v[uvIndex.clamp(0, v.length - 1)];
 
       // BT.601 YUV -> RGB, integer math (>>10 == /1024).
       int r = yVal + ((1436 * (vVal - 128)) >> 10);
@@ -122,12 +149,56 @@ Uint8List yuv420ToRgb300({
   return out;
 }
 
+/// Parses raw SSD MobileNet output tensors into normalized detections.
+///
+/// In TensorFlow Lite's TFLite_Detection_PostProcess operator:
+/// - Background is stripped, and classes are 0-based (0 for person, 43 for bottle, etc.).
+/// - The COCO label map includes '???' (background) at index 0, so model class `cls`
+///   maps to `labels[cls + 1]`.
+List<List<Object>> parseDetections({
+  required List<List<double>> boxes,
+  required List<double> classes,
+  required List<double> scores,
+  required int count,
+  required List<String> labels,
+  double threshold = 0.4,
+}) {
+  final dets = <List<Object>>[];
+  final maxBoxes = count > 0 ? count.clamp(0, classes.length) : classes.length;
+
+  for (int i = 0; i < maxBoxes; i++) {
+    final score = scores[i];
+    if (score < threshold) continue;
+    final cls = classes[i].toInt();
+
+    // Map 0-based TFLite_Detection_PostProcess class index to labelmap.txt
+    // where index 0 is '???', 1 is 'person', 44 is 'bottle', etc.
+    final labelIndex = cls + 1;
+    if (labelIndex < 0 || labelIndex >= labels.length) continue;
+    final label = labels[labelIndex];
+    if (label == '???') continue;
+
+    final box = boxes[i];
+    final l = box[1].clamp(0.0, 1.0);
+    final t = box[0].clamp(0.0, 1.0);
+    final r = box[3].clamp(0.0, 1.0);
+    final b = box[2].clamp(0.0, 1.0);
+    // SSD order: [ymin, xmin, ymax, xmax] -> wire: [label,conf,l,t,r,b].
+    dets.add([label, score, l, t, r, b]);
+  }
+  return dets;
+}
+
 /// Runs the SSD MobileNet model. Input: 300x300x3 uint8 RGB.
-/// Outputs (documented order for this model file): boxes [1,10,4] as
-/// [ymin,xmin,ymax,xmax], classes [1,10] (1-based), scores [1,10],
+/// Outputs: boxes [1,10,4] as [ymin,xmin,ymax,xmax],
+/// classes [1,10] (0-based relative to objects), scores [1,10],
 /// num_detections [1].
 List<List<Object>> _runInference(
-    Interpreter interpreter, List<String> labels, Uint8List rgb) {
+  Interpreter interpreter,
+  List<String> labels,
+  Uint8List rgb, [
+  double threshold = 0.4,
+]) {
   final input = rgb.reshape([1, 300, 300, 3]);
 
   final outBoxes = List.filled(40, 0.0).reshape([1, 10, 4]);
@@ -139,21 +210,20 @@ List<List<Object>> _runInference(
     [input],
     {0: outBoxes, 1: outClasses, 2: outScores, 3: outCount},
   );
-
-  const threshold = 0.4;
-  final boxes = (outBoxes[0] as List).cast<List>();
+  final boxes = (outBoxes[0] as List)
+      .map((b) => (b as List).cast<double>())
+      .toList();
   final classes = (outClasses[0] as List).cast<double>();
   final scores = (outScores[0] as List).cast<double>();
+  final count = (outCount[0] is num ? (outCount[0] as num).toInt() : 10)
+      .clamp(0, 10);
 
-  final dets = <List<Object>>[];
-  for (int i = 0; i < 10; i++) {
-    final score = scores[i];
-    if (score < threshold) continue;
-    final cls = classes[i].toInt();
-    if (cls < 1 || cls >= labels.length) continue;
-    final box = boxes[i].cast<double>();
-    // SSD order: [ymin, xmin, ymax, xmax] -> wire: [label,conf,l,t,r,b].
-    dets.add([labels[cls], score, box[1], box[0], box[3], box[2]]);
-  }
-  return dets;
+  return parseDetections(
+    boxes: boxes,
+    classes: classes,
+    scores: scores,
+    count: count,
+    labels: labels,
+    threshold: threshold,
+  );
 }

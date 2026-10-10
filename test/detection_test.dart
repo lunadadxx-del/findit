@@ -120,6 +120,202 @@ void main() {
       expect(cy, greaterThan(220));
       expect(cy, lessThan(295));
     });
+    test('yuv420ToRgb300 supports custom yRowStride padding', () {
+      const w = 4, h = 2, strideY = 6;
+      final yBytes = Uint8List(strideY * h);
+      // Row 0: 4 pixels white, 2 pixels padding (black)
+      yBytes[0] = 255;
+      yBytes[1] = 255;
+      yBytes[2] = 255;
+      yBytes[3] = 255;
+      // Row 1: 4 pixels white, 2 pixels padding
+      yBytes[strideY + 0] = 255;
+      yBytes[strideY + 1] = 255;
+      yBytes[strideY + 2] = 255;
+      yBytes[strideY + 3] = 255;
+
+      final uBytes = Uint8List(2 * 1)..fillRange(0, 2, 128);
+      final vBytes = Uint8List(2 * 1)..fillRange(0, 2, 128);
+      final rgb = yuv420ToRgb300(
+        y: yBytes,
+        u: uBytes,
+        v: vBytes,
+        width: w,
+        height: h,
+        uvRowStride: 2,
+        uvPixelStride: 1,
+        rotation: 0,
+        yRowStride: strideY,
+      );
+      expect(rgb.length, 300 * 300 * 3);
+      expect(rgb[0], greaterThan(240));
+    });
+  });
+
+  group('parseDetections label mapping & postprocess', () {
+    final labels = [
+      '???',
+      'person',
+      'bicycle',
+      'car',
+      'motorcycle',
+      'airplane',
+      'bus',
+      'train',
+      'truck',
+      'boat',
+      'traffic light',
+      'fire hydrant',
+      '???',
+      'stop sign',
+      'parking meter',
+      'bench',
+      'bird',
+      'cat',
+      'dog',
+      'horse',
+      'sheep',
+      'cow',
+      'elephant',
+      'bear',
+      'zebra',
+      'giraffe',
+      '???',
+      'backpack',
+      'umbrella',
+      '???',
+      '???',
+      'handbag',
+      'tie',
+      'suitcase',
+      'frisbee',
+      'skis',
+      'snowboard',
+      'sports ball',
+      'kite',
+      'baseball bat',
+      'baseball glove',
+      'skateboard',
+      'surfboard',
+      'tennis racket',
+      'bottle',
+      '???',
+      'wine glass',
+      'cup',
+      'fork',
+      'knife',
+      'spoon',
+      'bowl',
+      'banana',
+      'apple',
+      'sandwich',
+      'orange',
+      'broccoli',
+      'carrot',
+      'hot dog',
+      'pizza',
+      'donut',
+      'cake',
+      'chair',
+      'couch',
+      'potted plant',
+      'bed',
+      '???',
+      'dining table',
+      '???',
+      '???',
+      'toilet',
+      '???',
+      'tv',
+      'laptop',
+      'mouse',
+      'remote',
+      'keyboard',
+      'cell phone',
+      'microwave',
+      'oven',
+      'toaster',
+      'sink',
+      'refrigerator',
+      '???',
+      'book',
+      'clock',
+      'vase',
+      'scissors',
+      'teddy bear',
+      'hair drier',
+      'toothbrush',
+    ];
+
+    test('correctly maps 0-based TFLite PostProcess class index to labelmap', () {
+      // cls 43 = bottle (COCO id 44, labelmap index 44)
+      // cls 76 = cell phone (COCO id 77, labelmap index 77)
+      // cls 0 = person (COCO id 1, labelmap index 1)
+      // cls 46 = cup (COCO id 47, labelmap index 47)
+      final boxes = [
+        [0.1, 0.2, 0.8, 0.6],
+        [0.0, 0.0, 0.5, 0.5],
+        [0.2, 0.3, 0.7, 0.8],
+        [0.3, 0.4, 0.6, 0.7],
+      ];
+      final classes = [43.0, 76.0, 0.0, 46.0];
+      final scores = [0.88, 0.75, 0.92, 0.65];
+
+      final dets = parseDetections(
+        boxes: boxes,
+        classes: classes,
+        scores: scores,
+        count: 4,
+        labels: labels,
+        threshold: 0.40,
+      );
+
+      expect(dets.length, 4);
+      expect(dets[0][0], 'bottle');
+      expect(dets[0][1], 0.88);
+      expect(dets[1][0], 'cell phone');
+      expect(dets[2][0], 'person');
+      expect(dets[3][0], 'cup');
+    });
+
+    test('filters out detections below threshold', () {
+      final boxes = [
+        [0.1, 0.2, 0.8, 0.6],
+      ];
+      final classes = [43.0];
+      final scores = [0.35];
+
+      final dets = parseDetections(
+        boxes: boxes,
+        classes: classes,
+        scores: scores,
+        count: 1,
+        labels: labels,
+        threshold: 0.40,
+      );
+
+      expect(dets, isEmpty);
+    });
+
+    test('ignores background placeholder labels', () {
+      // Suppose model outputs a class pointing to '???'
+      final boxes = [
+        [0.1, 0.2, 0.8, 0.6],
+      ];
+      final classes = [11.0]; // 11 + 1 = 12 ('???')
+      final scores = [0.90];
+
+      final dets = parseDetections(
+        boxes: boxes,
+        classes: classes,
+        scores: scores,
+        count: 1,
+        labels: labels,
+        threshold: 0.40,
+      );
+
+      expect(dets, isEmpty);
+    });
   });
 
   group('Detection.fromWire', () {
@@ -142,13 +338,26 @@ void main() {
     });
 
     test('voice input matching', () {
-      expect(
-        TargetObjects.matchVoiceInput('find my bottle please'),
-        'bottle',
-      );
+      expect(TargetObjects.matchVoiceInput('find my bottle please'), 'bottle');
       expect(TargetObjects.matchVoiceInput('where is my mobile'), 'phone');
       expect(TargetObjects.matchVoiceInput('find my keys'), isNull);
       expect(TargetObjects.matchVoiceInput('hello world'), isNull);
+    });
+
+    test('unsupported query detection', () {
+      expect(TargetObjects.isQueryUnsupported('where are my keys'), isTrue);
+      expect(TargetObjects.isQueryUnsupported('find my wallet please'), isTrue);
+      expect(
+        TargetObjects.isQueryUnsupported('can you see spectacles'),
+        isTrue,
+      );
+      expect(TargetObjects.isQueryUnsupported('find my bottle'), isFalse);
+    });
+
+    test('icon mapping provides valid icons', () {
+      expect(TargetObjects.iconFor('bottle'), isNotNull);
+      expect(TargetObjects.iconFor('phone'), isNotNull);
+      expect(TargetObjects.iconFor('unknown_object'), isNotNull);
     });
   });
 }

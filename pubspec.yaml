@@ -10,7 +10,7 @@ dependencies:
   flutter:
     sdk: flutter
   # Camera capture + image stream for the detection pipeline.
-  camera: ^0.12.1
+  camera: ">=0.11.0 <0.12.1"
   # On-device TFLite inference (no cloud, no internet needed).
   tflite_flutter: ^0.12.1
   # On-device text-to-speech for voice guidance (Android TextToSpeech).
@@ -18,9 +18,11 @@ dependencies:
   # Haptic / vibration feedback for proximity guidance.
   vibration: ^3.2.1
   # Voice input ("find my bottle") via Android SpeechRecognizer.
-  speech_to_text: ^7.5.0
+  speech_to_text: ^7.4.0
   # Runtime permission requests (camera, microphone).
-  permission_handler: ^13.0.2
+  permission_handler: ^12.0.1
+  shared_preferences: 2.5.6
+  google_generative_ai: 0.4.7
 
 dev_dependencies:
   flutter_test:

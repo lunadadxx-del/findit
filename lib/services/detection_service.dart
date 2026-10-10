@@ -43,13 +43,15 @@ class DetectionService {
   Future<void> get ready => _ready.future;
 
   Future<void> initialize() async {
-    final modelBytes =
-        (await rootBundle.load('assets/models/detect.tflite'))
-            .buffer
-            .asUint8List();
+    final modelBytes = (await rootBundle.load(
+      'assets/models/detect.tflite',
+    )).buffer.asUint8List();
     final labelText = await rootBundle.loadString('assets/models/labelmap.txt');
-    final labels =
-        labelText.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
+    final labels = labelText
+        .split('\n')
+        .map((l) => l.trim())
+        .where((l) => l.isNotEmpty)
+        .toList();
 
     _port = ReceivePort();
     _port!.listen(_onMessage);
@@ -75,13 +77,14 @@ class DetectionService {
     switch (msg['type'] as String) {
       case 'ready':
         if (!_ready.isCompleted) _ready.complete();
+      case 'error':
+        _busy = false;
       case 'result':
         _busy = false;
         if (_disposed) return;
-        final dets =
-            ((msg['dets'] as List).cast<List>())
-                .map((w) => Detection.fromWire(w.cast<Object?>()))
-                .toList();
+        final dets = ((msg['dets'] as List).cast<List>())
+            .map((w) => Detection.fromWire(w.cast<Object?>()))
+            .toList();
         _results.add(
           DetectionFrame(
             frameId: msg['id'] as int,
@@ -106,6 +109,8 @@ class DetectionService {
     required int uvRowStride,
     required int uvPixelStride,
     required int rotation,
+    int? yRowStride,
+    double? threshold,
   }) {
     final inbox = _isolateInbox;
     if (inbox == null || _busy || _disposed) return;
@@ -119,9 +124,11 @@ class DetectionService {
       'v': Uint8List.fromList(v),
       'width': width,
       'height': height,
+      'yRowStride': yRowStride ?? width,
       'uvRowStride': uvRowStride,
       'uvPixelStride': uvPixelStride,
       'rotation': rotation,
+      'threshold': threshold ?? 0.40,
     });
   }
 
